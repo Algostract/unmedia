@@ -84,6 +84,7 @@ export default defineNuxtConfig({
     '/images/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/api/**': { cors: true },
+    '/media/**': { cors: true },
   },
   runtimeConfig: {
     app: {

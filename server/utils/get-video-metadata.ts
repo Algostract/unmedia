@@ -23,7 +23,7 @@ export interface VideoMetadata {
   stream: VideoStream // Only the main video stream
 }
 
-export async function getVideoMetadata(filePath: string): Promise<VideoMetadata> {
+export default async function (filePath: string): Promise<VideoMetadata> {
   const { stdout } = await execa('ffprobe', ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath])
   const data = JSON.parse(stdout)
 

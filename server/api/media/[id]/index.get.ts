@@ -1,6 +1,7 @@
 import { createWriteStream } from 'node:fs'
 import { Writable } from 'node:stream'
 import z from 'zod'
+import mime from 'mime-types'
 import { syncDrive } from '~~/server/routes/media/[kind]/[...rest]'
 
 export default defineEventHandler(async (event) => {
@@ -24,6 +25,6 @@ export default defineEventHandler(async (event) => {
     await stream.pipeTo(Writable.toWeb(createWriteStream(`./static/${source}`)))
   }
 
-  const metaData = await getVideoMetadata(`./static/${source}`)
+  const metaData = `${mime.lookup(mediaId)}`.includes('image') ? await getImageMetadata(`./static/${source}`) : await getVideoMetadata(`./static/${source}`)
   return metaData
 })
