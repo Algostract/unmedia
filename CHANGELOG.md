@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.9
+
+[compare changes](https://github.com/algostract/unfiles/compare/v0.5.8...v0.5.9)
+
+### 🚀 Enhancements
+
+- Modfied metadata api ([0d3002a](https://github.com/algostract/unfiles/commit/0d3002a))
+
+### 🏡 Chore
+
+- Update dependencies and configuration ([c5d5771](https://github.com/algostract/unfiles/commit/c5d5771))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.5.8
 
 [compare changes](https://github.com/algostract/unfiles/compare/v0.5.7...v0.5.8)
