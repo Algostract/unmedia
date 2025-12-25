@@ -54,6 +54,8 @@ useSeoMeta({
 </template>
 
 <style>
+@reference "./assets/css/main.css";
+
 * {
   -webkit-tap-highlight-color: transparent;
   scrollbar-width: 6px;
@@ -61,11 +63,11 @@ useSeoMeta({
 }
 
 *::-webkit-scrollbar {
-  @apply block size-[6px] bg-light-400 dark:bg-dark-400;
+  @apply block size-[6px] bg-neutral-200 dark:bg-neutral-800;
 }
 
 *::-webkit-scrollbar-thumb {
-  @apply rounded-md bg-light-600 dark:bg-dark-600;
+  @apply rounded-md bg-neutral-400 dark:bg-neutral-600;
 }
 
 html {
@@ -73,7 +75,7 @@ html {
 }
 
 body {
-  @apply relative min-h-screen overflow-x-hidden bg-light-400 fill-black font-main text-black dark:bg-dark-400 dark:fill-white dark:text-white;
+  @apply bg-background relative min-h-screen overflow-x-hidden fill-black text-black dark:fill-white dark:text-white;
 }
 
 svg.iconify--local {

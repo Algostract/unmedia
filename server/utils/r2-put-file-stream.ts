@@ -1,8 +1,11 @@
 import mimeTypes from 'mime-types'
 
-export default async function (objectKey: string, webStream: ReadableStream, byteLength: number) {
-  const endpoint = import.meta.env.NUXT_PRIVATE_R2_ENDPOINT!
-  const bucket = import.meta.env.NUXT_PRIVATE_R2_BUCKET!
+export default async function (
+  objectKey: string,
+  webStream: ReadableStream,
+  byteLength: number,
+  { endpoint, bucket } = { endpoint: import.meta.env.NUXT_PRIVATE_R2_ENDPOINT!, bucket: import.meta.env.NUXT_PRIVATE_R2_BUCKET! }
+) {
   const url = `${endpoint}/${bucket}/${objectKey}`
 
   let res: Response

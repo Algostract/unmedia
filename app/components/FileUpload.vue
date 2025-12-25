@@ -51,12 +51,12 @@ onUnmounted(() => {
         <!-- Close button top right -->
         <button
           type="button"
-          class="absolute right-3 top-3 block size-7 rounded-sm bg-neutral-100 p-1 text-neutral-600 transition hover:bg-neutral-200 hover:text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          class="absolute top-3 right-3 block size-7 rounded-sm bg-neutral-100 p-1 text-neutral-600 transition hover:bg-neutral-200 hover:text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
           aria-label="Close"
           @click="emit('close')">
           <NuxtIcon name="lucide:x" class="size-5" />
         </button>
-        <h2 class="font-semibold mb-7 text-lg">Upload Media</h2>
+        <h2 class="mb-7 text-lg font-semibold">Upload Media</h2>
         <!-- Drag area only -->
         <label class="block cursor-pointer select-none" tabindex="0">
           <div
@@ -66,7 +66,7 @@ onUnmounted(() => {
             @dragleave="handleDragLeave"
             @drop="handleDrop">
             <NuxtIcon name="lucide:upload" class="h-10 w-10 text-blue-500" />
-            <span class="font-semibold mb-2 mt-1 block text-lg">Drop files here to upload</span>
+            <span class="mt-1 mb-2 block text-lg font-semibold">Drop files here to upload</span>
             <span class="mb-2 block text-sm text-neutral-500 dark:text-neutral-400">or click to browse</span>
           </div>
           <input type="file" multiple accept="image/*,video/*" class="hidden" aria-label="Upload files" @change="handleInput" />

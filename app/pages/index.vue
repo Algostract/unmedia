@@ -1,158 +1,138 @@
 <script setup lang="ts">
-const query = ref<string>('')
-const sort = ref<'Relevance' | 'Newest' | 'Oldest'>('Relevance')
-const view = ref<'grid' | 'list'>('grid')
+// type MediaFile = {
+//   id: string
+//   name: string
+//   path: string
+//   type: 'image' | 'video'
+// }
 
-const sortItems = ['Relevance', 'Newest', 'Oldest'] as const
-
-const { data: project } = await useFetch('/api/project')
-
-if (!project.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Page not found', fatal: true })
+type AssetSidebarItem = {
+  title: string
+  key: 'details' | 'preview' | 'metadata'
 }
 
-const filteredProjects = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  let arr = project.value?.filter(({ name }) => name.toLowerCase().includes(q)) ?? []
-  if (sort.value === 'Newest') arr = [...arr].reverse()
-  if (sort.value === 'Oldest') arr = [...arr]
-  return arr
+definePageMeta({
+  // middleware: ['auth'],
+  // layout: 'dashboard'
 })
 
-/* Dark mode toggle using the 'dark' class on <html> */
-const isDark = ref(false)
-const applyDark = (v: boolean) => {
-  const root = document.documentElement
-  root.classList.toggle('dark', v)
-  localStorage.setItem('theme:dark', v ? '1' : '0')
-  isDark.value = v
+useSeoMeta({ title: 'Assets' })
+
+// const route = useRoute()
+// const router = useRouter()
+
+const assetId = ref(null) // computed(() => (route.query.asset ? String(route.query.asset) : null))
+// const folderPath = computed(() => (route.query.folder ? String(route.query.folder) : null))
+
+const uploadDialogOpen = ref(false)
+const assetSidebarOpen = computed(() => !!assetId.value)
+
+// local UI state
+const activeDetailsTab = ref<AssetSidebarItem['key']>('details')
+
+const assetSidebarItems: AssetSidebarItem[] = [
+  { title: 'Details', key: 'details' },
+  { title: 'Preview', key: 'preview' },
+  { title: 'Metadata', key: 'metadata' },
+]
+
+// function setQueryParam(key: 'asset' | 'folder', value: string | null) {
+//   const q = { ...route.query } as Record<string, any>
+//   if (!value) delete q[key]
+//   else q[key] = value
+//   router.replace({ query: q })
+// }
+
+// function handleMediaSelect(media: MediaFile) {
+//   setQueryParam('asset', media.id)
+// }
+
+function clearAssetSelection() {
+  assetId.value = null
 }
-const toggleDark = () => applyDark(!isDark.value)
 
-onMounted(() => {
-  const saved = localStorage.getItem('theme:dark')
-  applyDark(saved === '1')
-})
+// function clearFolder() {
+//   setQueryParam('folder', null)
+// }
 
-const showFileUpload = ref(false)
-function toggleFileUpload(value: boolean) {
-  showFileUpload.value = value
+// function setFolder(next: string) {
+//   setQueryParam('folder', next)
+// }
+
+function openUploadDialog() {
+  uploadDialogOpen.value = true
 }
 
-function uploadFiles(files?: File[]) {
-  toggleFileUpload(false)
-
-  if (!(files && files.length)) return
-
-  console.log({ files })
-}
+const { data: media } = await useFetch('/api/media')
 </script>
 
 <template>
-  <div class="min-h-screen bg-white text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
-    <div class="container mx-auto px-4 py-6">
-      <!-- Top bar -->
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
-          <!-- Home icon -->
-          <NuxtIcon name="lucide:home" class="h-4 w-4" />
-          <span>Home</span>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <!-- Color mode button -->
-          <button
-            type="button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-            aria-label="Toggle theme"
-            title="Toggle theme"
-            @click="toggleDark">
-            <NuxtIcon v-if="!isDark" name="lucide:sun" class="h-4 w-4" />
-
-            <NuxtIcon v-else name="lucide:moon" class="h-4 w-4" />
-          </button>
-
-          <button
-            type="button"
-            class="font-medium inline-flex h-8 items-center justify-center gap-2 rounded-md bg-neutral-900 px-3 text-sm text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-            @click="toggleFileUpload(true)">
-            <NuxtIcon name="lucide:upload" class="h-4 w-4" />
-            <span>Upload Files</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Controls -->
-      <div class="mt-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div class="flex items-center gap-3">
-          <span class="text-sm text-neutral-500 dark:text-neutral-400">Sort by:</span>
-          <select
-            v-model="sort"
-            class="h-8 w-40 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-700 outline-none ring-0 focus:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
-            <option v-for="o in sortItems" :key="o" :value="o">{{ o }}</option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <!-- Search -->
-          <label class="relative block">
-            <span class="absolute inset-y-0 left-3 flex items-center text-neutral-400">
-              <NuxtIcon name="lucide:search" class="h-4 w-4" />
-            </span>
-            <input
-              v-model="query"
-              type="text"
-              placeholder="Search Media Library"
-              class="h-8 w-full rounded-md border border-neutral-200 bg-white pl-9 pr-3 text-sm text-neutral-700 placeholder-neutral-400 outline-none focus:border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100" />
-          </label>
-
-          <!-- View toggle -->
-          <div class="flex overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-700">
-            <button
-              type="button"
-              :class="[
-                'inline-flex h-8 w-9 items-center justify-center text-neutral-600 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-neutral-700',
-                view === 'grid' ? 'bg-neutral-100 dark:bg-neutral-700' : 'bg-transparent',
-              ]"
-              aria-label="Grid view"
-              title="Grid view"
-              @click="view = 'grid'">
-              <NuxtIcon name="lucide:layout-grid" class="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              :class="[
-                'inline-flex h-8 w-9 items-center justify-center text-neutral-600 hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-neutral-700',
-                view === 'list' ? 'bg-neutral-100 dark:bg-neutral-700' : 'bg-transparent',
-              ]"
-              aria-label="List view"
-              title="List view"
-              @click="view = 'list'">
-              <NuxtIcon name="lucide:list" class="h-4 w-4" />
-            </button>
+  <div class="h-[calc(100vh-56px)] lg:h-[calc(100vh-56px)]">
+    <div class="h-full">
+      <!-- Split view (main + details) -->
+      <UiResizablePanelGroup direction="horizontal" class="h-full">
+        <!-- Main panel -->
+        <UiResizablePanel :default-size="assetSidebarOpen ? 70 : 100" :min-size="30">
+          <!-- Main content -->
+          <div class="h-[calc(100vh-64px-56px)] overflow-auto px-4 sm:px-6">
+            <!-- @select="handleMediaSelect" @set-folder="setFolder"-->
+            <MediaGrid
+              v-if="media"
+              :media="media"
+              :selected-asset-id="assetId"
+              @select="
+                (slug) => {
+                  assetId = slug
+                  activeDetailsTab = 'details'
+                  console.log({})
+                }
+              "
+              @upload="openUploadDialog" />
           </div>
-        </div>
-      </div>
+        </UiResizablePanel>
 
-      <!-- Count -->
-      <p class="mt-6 text-sm text-neutral-500 dark:text-neutral-400">Showing {{ filteredProjects?.length }} items</p>
+        <!-- Details sidebar panel -->
+        <template v-if="assetSidebarOpen">
+          <UiResizableHandle with-handle />
 
-      <!-- Grid/List -->
-      <div v-if="view === 'grid'" class="flex flex-col gap-12">
-        <div v-for="filteredProject in filteredProjects" :key="filteredProject.id" class="mt-4 grid gap-6 bg-light-500 p-8 dark:bg-dark-500">
-          <h1>{{ filteredProject.name }}</h1>
-          <div class="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            <ImageCard v-for="mediaItem in filteredProject.media" :key="mediaItem.id" view="grid" :media="mediaItem" />
-          </div>
-        </div>
-      </div>
+          <UiResizablePanel :default-size="30" :min-size="25" :max-size="50" collapsible>
+            <aside class="bg-background flex h-full flex-col border-l">
+              <div class="flex items-center justify-between border-b px-4 py-3">
+                <div class="min-w-0">
+                  <p class="text-muted-foreground text-xs">Selected asset</p>
+                  <p class="truncate text-sm font-medium">{{ assetId }}</p>
+                </div>
+                <UiButton variant="ghost" size="icon" @click="clearAssetSelection">
+                  <span class="sr-only">Close</span>
+                  <svg viewBox="0 0 24 24" class="h-5 w-5 fill-current" aria-hidden="true">
+                    <path
+                      d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12l-4.9 4.89a1 1 0 1 0 1.42 1.42L12 13.41l4.89 4.9a1 1 0 0 0 1.42-1.42L13.41 12l4.9-4.89a1 1 0 0 0-.01-1.4z" />
+                  </svg>
+                </UiButton>
+              </div>
 
-      <div v-else class="mt-4 space-y-4">
-        <div v-for="filteredProject in filteredProjects" :key="filteredProject.id">
-          <ImageCard v-for="mediaItem in filteredProject.media" :key="mediaItem.id" view="list" :media="mediaItem" />
-        </div>
-      </div>
+              <nav class="border-b p-2">
+                <div class="grid grid-cols-3 gap-1">
+                  <UiButton
+                    v-for="it in assetSidebarItems"
+                    :key="it.key"
+                    variant="ghost"
+                    class="h-9 justify-center"
+                    :class="activeDetailsTab === it.key ? 'bg-muted' : ''"
+                    @click="activeDetailsTab = it.key">
+                    {{ it.title }}
+                  </UiButton>
+                </div>
+              </nav>
+
+              <div class="flex-1 overflow-auto p-4">
+                <!-- Replace with your real details sidebar implementation -->
+                <AssetDetails :asset-id="assetId!" :tab="activeDetailsTab" />
+              </div>
+            </aside>
+          </UiResizablePanel>
+        </template>
+      </UiResizablePanelGroup>
     </div>
-    <FileUpload :show="showFileUpload" @close="uploadFiles" />
   </div>
 </template>

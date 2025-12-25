@@ -2,7 +2,7 @@
   <img src="./public/logo.png" lt="Logo" width="65" />
 <p>
 
-# UnFiles
+# UnMedia
 
 <p align="center">
   <a href="https://shirsendu-bairagi.betteruptime.com">
@@ -12,7 +12,7 @@
 
 ![Landing](public/previews/landing.webp)
 
-> Media Manager
+> An open-source media management platform that enables users to upload, store, manage, optimize, and deliver media via a global content delivery network (CDN).
 
 - 🎭 Authentication (OAuth 2.0)
 - 📁 Project based folder autocreate

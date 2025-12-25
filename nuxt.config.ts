@@ -1,40 +1,4 @@
-import vue from '@vitejs/plugin-vue'
-
-const host = process.env.TAURI_DEV_HOST || 'localhost'
-const port = process.env.PORT ? parseInt(process.env.PORT) : 3000
-
-const nativeConfig =
-  process.env.PLATFORM_ENV === 'native'
-    ? {
-        ssr: false,
-        devServer: { host },
-        ignore: ['**/src-tauri/**', '**/node_modules/**', '**/dist/**', '**/.git/**', '**/.nuxt/**', '**/.output/**'],
-        vite: {
-          clearScreen: false,
-          envPrefix: ['VITE_', 'TAURI_'],
-          server: {
-            strictPort: true,
-            port,
-            host: host || false,
-            hmr: host
-              ? {
-                  protocol: 'ws',
-                  host,
-                  port,
-                }
-              : undefined,
-          },
-        },
-        nitro: {
-          rollupConfig: {
-            plugins: [vue()],
-          },
-          prerender: {
-            routes: [],
-          },
-        },
-      }
-    : {}
+import tailwindcss from '@tailwindcss/vite'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -50,19 +14,19 @@ export default defineNuxtConfig({
     '@nuxtjs/color-mode',
     // '@nuxtjs/i18n',
     // '@nuxtjs/seo',
-    '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
     '@regle/nuxt',
     '@vite-pwa/nuxt',
-    '@vueuse/nuxt',
     // 'nuxt-auth-utils',
-    // 'nuxt-nodemailer',
+    '@vueuse/nuxt',
+    'shadcn-nuxt',
   ],
+  css: ['./app/assets/css/main.css'],
+  vite: {
+    plugins: [tailwindcss()],
+  },
   nitro: {
     compressPublicAssets: true,
-    rollupConfig: {
-      plugins: [vue()],
-    },
     storage: {
       fs: {
         driver: 'fs',
@@ -110,13 +74,6 @@ export default defineNuxtConfig({
       cloudreveR2Bucket: '',
       cloudreveR2Region: '',
       cloudreveR2PublicUrl: '',
-    },
-  },
-  app: {
-    head: {
-      htmlAttrs: {
-        lang: 'en',
-      },
     },
   },
   icon: {
@@ -332,18 +289,4 @@ export default defineNuxtConfig({
       type: 'module',
     },
   },
-  /*   nodemailer: {
-      from: '',
-      host: '',
-      port: '',
-      secure: true,
-      auth: {
-        user: '',
-        pass: '',
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    }, */
-  ...nativeConfig,
 })
