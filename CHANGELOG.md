@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.5.10
+
+[compare changes](https://github.com/algostract/unmedia/compare/v0.5.9...v0.5.10)
+
+### 🚀 Enhancements
+
+- Add media management API and update project structure ([a2596ca](https://github.com/algostract/unmedia/commit/a2596ca))
+
+### 🩹 Fixes
+
+- Implement sheet component structure and media API enhancements ([4240f78](https://github.com/algostract/unmedia/commit/4240f78))
+- Add Skeleton component with template and props ([06af570](https://github.com/algostract/unmedia/commit/06af570))
+- Add Separator component with template and props ([14531d5](https://github.com/algostract/unmedia/commit/14531d5))
+- Add Input component with template and props ([e65bec2](https://github.com/algostract/unmedia/commit/e65bec2))
+- Add Tooltip component with structure and props ([78e2874](https://github.com/algostract/unmedia/commit/78e2874))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+
 ## v0.5.9
 
 [compare changes](https://github.com/algostract/unfiles/compare/v0.5.8...v0.5.9)
