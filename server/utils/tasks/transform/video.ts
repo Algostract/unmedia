@@ -21,7 +21,7 @@ export default async function (payload: Record<string, string>): Promise<{
 
   // check if file already exists
   if (!(await fs.hasItem(source))) {
-    const { stream } = await r2GetFileStream(encodeURI(mediaOriginId), config.private.cloudreveR2Endpoint, config.private.cloudreveR2Bucket) // Web ReadableStream<Uint8Array>
+    const { stream } = await r2GetFileStream(encodeURI(mediaOriginId), 'origin', config.private.cloudreveR2Endpoint, config.private.cloudreveR2Bucket) // Web ReadableStream<Uint8Array>
     await stream.pipeTo(Writable.toWeb(createWriteStream(`./static/${source}`)))
   }
 
