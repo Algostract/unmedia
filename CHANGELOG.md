@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.6.0
+
+[compare changes](https://github.com/algostract/unmedia/compare/v0.5.10...v0.6.0)
+
+### 🚀 Enhancements
+
+- Enhance media processing with adaptive bitrate ([12b57fd](https://github.com/algostract/unmedia/commit/12b57fd))
+- ⚠️ Add Adaptive Bitrate feature to README ([e7fa35a](https://github.com/algostract/unmedia/commit/e7fa35a))
+
+### 🤖 CI
+
+- **release:** Update version ([e977d80](https://github.com/algostract/unmedia/commit/e977d80))
+- **release:** Update version ([04fb60e](https://github.com/algostract/unmedia/commit/04fb60e))
+
+#### ⚠️ Breaking Changes
+
+- ⚠️ Add Adaptive Bitrate feature to README ([e7fa35a](https://github.com/algostract/unmedia/commit/e7fa35a))
+
+### ❤️ Contributors
+
+- Shirsendu Bairagi ([@shba007](https://github.com/shba007))
+- Shba007 ([@shba007](https://github.com/shba007))
+
 ## v0.5.11
 
 [compare changes](https://github.com/algostract/unmedia/compare/v0.5.10...v0.5.11)
