@@ -18,6 +18,7 @@
 - 📁 Project based folder autocreate
 - 📤 Project link share to anoymous user with expritation
 - 📐 Analytics
+- Adative Bitrate
 
 - 🚀 PWA
 - ✋ Push Notification
