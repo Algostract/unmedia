@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// const props = defineProps<{
-//   media: {
-//     slug: string
-//     name: string
-//     type: string
-//     size: number
-//     image: string
-//   }
-// }>()
+defineProps<{
+  media: {
+    slug: string
+    name: string
+    type: string
+    size: number
+    image: string
+  }
+}>()
 
 const img = ref<HTMLImageElement | null>(null)
 const aspect = ref<string | null>(null)

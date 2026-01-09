@@ -39,42 +39,42 @@ export default async function <T>(name: string, { payload }: { payload?: Record<
   // Return same promise if identical job is already running
   const existing = inflight.get(key) as Promise<T> | undefined
   if (existing) {
-    consola.debug(`🔁 [${name}] dedupe hit for key=${key}`)
+    consola.debug(`🔁 [${name}] dedupe hit for cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)}`)
     const result = await existing
-    consola.success(`🟢 [${name}] deduped result resolved for key=${key}`)
+    consola.success(`🟢 [${name}] deduped result resolved for cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)}`)
     return { result }
   }
 
   const queuedSizeBefore = queue.size
   const pendingBefore = queue.pending
-  consola.info(`📥 [${name}] enqueue key=${key} (size=${queuedSizeBefore}, pending=${pendingBefore})`)
+  consola.debug(`📥 [${name}] enqueue cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)} (size=${queuedSizeBefore}, pending=${pendingBefore})`)
 
   // Schedule the job to run sequentially within the per-task queue
   const jobPromise: Promise<T> = (async () => {
     try {
       return await queue.add(async () => {
         const start = Date.now()
-        consola.start(`🚀 [${name}] start key=${key}`)
+        consola.start(`🚀 [${name}] start cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)}`)
         try {
           if (name === 'transform:image') {
             const res = await (transformImage as any)(payload)
-            consola.success(`✅ [${name}] done key=${key} in ${Date.now() - start}ms`)
+            consola.success(`✅ [${name}] done cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)} in ${Date.now() - start}ms`)
             return res
           }
           if (name === 'transform:video') {
             const res = await (transformVideo as any)(payload)
-            consola.success(`✅ [${name}] done key=${key} in ${Date.now() - start}ms`)
+            consola.success(`✅ [${name}] done cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)} in ${Date.now() - start}ms`)
             return res
           }
           throw new Error(`No task name ${name} found`)
         } catch (err) {
-          consola.error(`❌ [${name}] failed key=${key} in ${Date.now() - start}ms`)
+          consola.error(`❌ [${name}] failed cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)} in ${Date.now() - start}ms`)
           throw err
         }
       })
     } finally {
       inflight.delete(key)
-      consola.debug(`🧹 [${name}] cleanup key=${key} (size=${queue.size}, pending=${queue.pending})`)
+      consola.debug(`🧹 [${name}] cleanup cacheKey=${payload?.cacheKey.split('/').at(-1)} mediaOriginId=${payload?.mediaOriginId.split('/').at(-1)} (size=${queue.size}, pending=${queue.pending})`)
 
       try {
         Bun?.gc()

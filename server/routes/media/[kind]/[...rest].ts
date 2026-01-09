@@ -3,9 +3,10 @@ import consola from 'consola'
 import mime from 'mime-types'
 import { hash } from 'ohash'
 import type { H3Event, EventHandlerRequest } from 'h3'
-import type { ReadStream } from 'node:fs'
+
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
+import { generateMpd } from '~~/server/utils/transcode-video'
 
 function normalizeArgs(rawArgs: string) {
   const decodedArgs = decodeURIComponent(rawArgs || '')
@@ -76,7 +77,7 @@ function negotiateVideoFormat(event: H3Event<EventHandlerRequest>): {
   }
 }
 
-function getChunkRange(event: H3Event<EventHandlerRequest>, bufferSize: number): { chunkStart: number; chunkEnd: number; chunkSize: number } {
+/* function getChunkRange(event: H3Event<EventHandlerRequest>, bufferSize: number): { chunkStart: number; chunkEnd: number; chunkSize: number } {
   const range = getRequestHeader(event, 'range')
   let chunkStart = 0
   let chunkEnd = bufferSize - 1
@@ -90,7 +91,7 @@ function getChunkRange(event: H3Event<EventHandlerRequest>, bufferSize: number):
   }
 
   return { chunkStart, chunkEnd, chunkSize }
-}
+}*/
 
 function buildCacheKey({ kind, source, args, ext }: { kind: string; source: string; args: string; ext: string }) {
   const keyHash = hash({ kind, source, args })
@@ -100,12 +101,12 @@ function buildCacheKey({ kind, source, args, ext }: { kind: string; source: stri
 export const syncDrive = defineCachedFunction(
   async () => {
     consola.log('🔄 Syncing Drive')
-    const config = useRuntimeConfig().private
+    const config = useRuntimeConfig()
 
     const nameToPathMap: { [key: string]: string } = {}
     const allItemKeys = await r2GetAllFiles(r2Drive, {
-      endpoint: config.cloudreveR2Endpoint,
-      bucket: config.cloudreveR2Bucket,
+      endpoint: config.private.cloudreveR2Endpoint,
+      bucket: config.private.cloudreveR2Bucket,
     })
 
     for (const path of allItemKeys) {
@@ -124,7 +125,8 @@ export const syncDrive = defineCachedFunction(
 export default defineEventHandler(async (event) => {
   try {
     const { kind, rest } = await getValidatedRouterParams(event, z.object({ kind: z.enum(['image', 'audio', 'video']), rest: z.string().min(1) }).parse)
-    const [rawArgs, mediaId] = rest.split('/')
+    const [rawArgs, rawMediaId] = rest.split('/')
+    const mediaId = rawMediaId.replace(/\.[^.]+$/, '')
 
     if (!mediaId) throw createError({ statusCode: 400, message: 'Missing media mediaId' })
 
@@ -151,7 +153,7 @@ export default defineEventHandler(async (event) => {
         'content-type': contentType,
       })
 
-      const cacheKey = buildCacheKey({ kind, source: mediaId, args, ext: modifiers.format as string })
+      const cacheKey = buildCacheKey({ kind, source: mediaId, args: JSON.stringify(modifiers), ext: modifiers.format as string })
       const cachePath = `./static/${cacheKey}`
 
       // FS cache
@@ -220,23 +222,16 @@ export default defineEventHandler(async (event) => {
       return playbackStream
     } // Pipeline of audio
     else if (kind === 'audio') {
-      // const cacheKey = buildCacheKey({ kind, source: mediaId, args, ext: 'mp3' })
+      // const cacheKey = buildCacheKey({ kind, source: mediaId, args:JSON.stringify(modifiers), ext: 'mp3' })
       // const cachePath = `./static/${cacheKey}`
     } // Pipeline of video
-    else {
+    /* else {
       const modifiers = parseIpxArgs(args)
 
       const { format, codec } = negotiateVideoFormat(event)
       modifiers.format = !modifiers.format || modifiers.format === 'auto' ? format : modifiers.format
       modifiers.codec = !modifiers.codec || modifiers.codec === 'auto' ? codec : modifiers.codec
       // consola.log('⚙️ Video Modifiers', modifiers)
-
-      const CODEC_MAP = {
-        av1: 'av1',
-        hevc: 'hvc1, mp4a.40.2',
-        vp9: 'vp9, vorbis',
-        avc: 'avc1.42E01E, mp4a.40.2',
-      }
 
       const rangeHeader = getRequestHeader(event, 'range')
       const mimeType = `video/${modifiers.format}`
@@ -376,6 +371,112 @@ export default defineEventHandler(async (event) => {
         })
 
       return playbackStream
+    } */
+    else {
+      const cacheKey = `cache/${kind}/${rawMediaId}` //buildCacheKey({ kind, source: mediaId, args: JSON.stringify(modifiers), ext: modifiers.format as string })
+      const modifiers = parseIpxArgs(args)
+
+      const { format, codec } = negotiateVideoFormat(event)
+      modifiers.format = !modifiers.format || modifiers.format === 'auto' ? format : modifiers.format
+      modifiers.codec =
+        !modifiers.codec || modifiers.codec === 'auto'
+          ? codec
+          : modifiers.codec
+              .split('-')
+              .map((c) => CODEC_MAP[c].short)
+              .join('-')
+      modifiers.quality = !modifiers.quality || !modifiers.quality ? `80` : modifiers.quality
+
+      if (event.path.endsWith('.mpd')) {
+        console.log('Manifest File')
+
+        setResponseHeaders(event, {
+          'content-type': 'text/plain',
+        })
+
+        // const [minRes = 360, maxRes = 1920] = modifiers.resize.split('-').map((item) => parseInt(item) || undefined)
+
+        const mpd = await generateMpd({
+          mediaId,
+        })
+
+        if (!mpd) {
+          const mediaOriginId = (await syncDrive())[mediaId.split('_')[0]]
+          if (!mediaOriginId) {
+            throw createError({ statusCode: 404, message: '🚧 Missing media' })
+          }
+
+          consola.warn('⚠️ Video Cache MISS', { cacheKey })
+
+          const { result: _data } = await executeTask<{
+            streamPath: string
+            contentType: string
+            byteLength: number
+          }>('transform:video', { payload: { cacheKey, mediaId: mediaId.split('_')[0], mediaOriginId, modifiers } })
+        }
+
+        return mpd
+      } else {
+        const cacheKey = `cache/${kind}/${rawMediaId}` //buildCacheKey({ kind, source: mediaId, args: JSON.stringify(modifiers), ext: modifiers.format as string })
+        const cachePath = `./static/${cacheKey}`
+
+        const contentType = mime.types[`${modifiers.format}`] ?? 'application/octet-stream'
+
+        setResponseHeaders(event, {
+          vary: 'accept',
+          'content-type': contentType,
+        })
+
+        // FS cache
+        if (await fs.hasItem(cacheKey)) {
+          const metaData = await fs.getMeta(cacheKey)
+          const data = {
+            stream: createReadStream(cachePath),
+            contentType,
+            byteLength: metaData.size,
+          }
+
+          if (event.method === 'HEAD') {
+            return
+          }
+
+          consola.success('✅ Video FS Cache HIT', { cacheKey, bytes: data.byteLength })
+          return data.stream
+        }
+
+        // R2 cache
+        if (await r2.hasItem(cacheKey)) {
+          const data = await r2GetFileStream(cacheKey)
+          const [toDisk, toClient] = data.stream.tee()
+
+          diskPutFileStream(cachePath, toDisk).then(() => {
+            consola.info('💾 Video Saved to FS cache', { cacheKey, bytes: data.byteLength })
+          })
+
+          if (event.method === 'HEAD') {
+            return
+          }
+
+          consola.success('✅ Video R2 Cache HIT', { cacheKey, bytes: data.byteLength })
+          return toClient
+        }
+
+        throw createError({ statusCode: 400, message: 'Missing media mediaId' })
+
+        /*  const stream = Readable.toWeb(createReadStream(data.streamPath))
+         const [storageStream, playbackStream] = stream.tee()
+ 
+         // Cache to Storage (fire-and-forget; errors are logged)
+         r2PutFileStream(cacheKey, storageStream as ReadableStream, data.byteLength)
+           .then(() => {
+             consola.info('💾 Video Saved to R2 cache', { cacheKey, bytes: data.byteLength })
+           })
+           .catch((error) => {
+             consola.error('Failed to save to cache', error)
+           })
+ 
+         return playbackStream */
+      }
     }
   } catch (error) {
     if (error instanceof Error && 'statusCode' in error) {

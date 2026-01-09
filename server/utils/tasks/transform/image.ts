@@ -1,11 +1,6 @@
 import mime from 'mime-types'
-import { createIPX, ipxFSStorage } from 'ipx'
 import { createWriteStream } from 'node:fs'
 import { Writable } from 'node:stream'
-
-const ipx = createIPX({
-  storage: ipxFSStorage({ dir: './static' }),
-})
 
 function ensureBuffer(input: Buffer | Uint8Array | ArrayBuffer): Buffer {
   if (Buffer.isBuffer(input)) return input
@@ -47,7 +42,8 @@ export default async function (payload: Record<string, string>): Promise<{
     await generateThumbnail(`./static/${source}`, `./static/thumbnail`, '00:00:00.500')
   }
 
-  const { data } = await ipx(isVideo ? `thumbnail/${mediaId.replace(/\.[^/.]+$/, '.jpg')}` : source, modifiers).process()
+  const data = await transcodeImage(isVideo ? `thumbnail/${mediaId.replace(/\.[^/.]+$/, '.jpg')}` : source, modifiers)
+
   if (typeof data === 'string') {
     throw createError({ statusCode: 500, message: 'data is a string' })
   }

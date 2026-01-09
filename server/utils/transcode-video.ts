@@ -1,217 +1,232 @@
 import { execa } from 'execa'
+import path from 'path'
 
-export const codecs = ['avc', 'vp9', 'hevc', 'av1'] as const
-export type Codec = (typeof codecs)[number]
-
-export const resolutions = ['1440p', '1080p', '720p'] as const
-
-export const devices = ['cpu', 'gpu'] as const
-export type Device = (typeof devices)[number]
-
-const codecOptions = {
-  avc: {
-    extension: 'mp4',
-    cpu: { lib: 'libx264', preset: 'slower', extra: '-threads 0', audio: 'aac' },
-    gpu: { lib: 'h264_nvenc', preset: 'slower', audio: 'aac' },
-  },
-  vp9: {
-    extension: 'webm',
-    cpu: { lib: 'libvpx-vp9', deadline: 'best', extra: '-threads 0', audio: 'libvorbis' },
-  },
-  hevc: {
-    extension: 'mp4',
-    cpu: { lib: 'libx265', preset: 'slow', extra: '-threads 0', audio: 'aac' },
-    gpu: { lib: 'h265_nvenc', preset: 'slow', audio: 'aac' },
-  },
-  av1: {
-    extension: 'webm',
-    cpu: { lib: 'libsvtav1', preset: '1', extra: '-threads 0', audio: 'libopus' },
-    gpu: { lib: 'av1_nvenc', preset: '1', audio: 'libopus' },
-  },
-} as const
-
-interface CodecDeviceOptions {
-  lib: string
-  preset?: string
-  deadline?: string
-  extra?: string
-  audio: string
+// Define interfaces for better type safety
+interface ResolutionVariant {
+  height: number
+  videoBitrate: string // Base bitrate for this resolution
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n))
+interface AudioVariant {
+  bitrate: string
+  channels: number
 }
 
-function mapQualityToValue(codec: Codec, mode: Device, quality: number): { flag: '-crf' | '-cq'; value: number; extra?: string[] } {
-  // quality: 0..100, higher is better quality (lower crf/cq)
-  const q = clamp(quality ?? 60, 0, 100)
-  const t = q / 100
+// Constants
+const SEGMENT_DURATION = 4
+const FPS = 30
+const GOP_SIZE = FPS * SEGMENT_DURATION
 
-  switch (codec) {
-    case 'avc': {
-      if (mode === 'gpu') {
-        // NVENC CQ 0..51 (0=auto), map 0..100 -> 40..20 (rounded)
-        const cq = Math.round(40 - t * 20)
-        return { flag: '-cq', value: clamp(cq, 1, 51), extra: ['-rc', 'vbr'] }
+// Codec definition strictly ordered as requested
+const CODECS = [
+  { name: 'av1', ffmpegCodec: 'libsvtav1', ext: 'av1' },
+  { name: 'hevc', ffmpegCodec: 'libx265', ext: 'hevc' },
+  { name: 'vp9', ffmpegCodec: 'libvpx-vp9', ext: 'vp9' },
+  { name: 'avc', ffmpegCodec: 'libx264', ext: 'avc' },
+]
+
+// Resolutions ordered descending (1920 -> 1080 -> 720)
+const VIDEO_VARIANTS: ResolutionVariant[] = [
+  { height: 1080, videoBitrate: '3500k' },
+  { height: 720, videoBitrate: '2000k' },
+  { height: 480, videoBitrate: '1200k' },
+]
+
+// Exactly two audio streams as requested
+const AUDIO_VARIANTS: AudioVariant[] = [
+  { bitrate: '192k', channels: 2 }, // High quality
+  { bitrate: '128k', channels: 2 }, // Standard quality
+]
+
+export async function generateMpd(params: { mediaId: string }): Promise<string> {
+  const fs = useStorage('fs')
+
+  const { mediaId } = params
+  const mpdXml = await fs.getItemRaw(path.join('cache/video', `${mediaId}.mpd`))
+
+  return mpdXml
+}
+
+export default async function (filePath: string, outputDir: string) {
+  if (!filePath || typeof filePath !== 'string') throw new Error('Invalid filePath')
+
+  const absoluteFilePath = path.resolve(filePath)
+  const outputName = path.basename(filePath.split('_').at(-1)!, path.extname(filePath))
+
+  const ffmpegArgs: string[] = [
+    '-y', // Overwrite output
+    '-i',
+    absoluteFilePath,
+  ]
+
+  // =========================================================================
+  // 1. CONSTRUCT FILTER COMPLEX (Optimization: Scale Once, Split Many)
+  // =========================================================================
+  const filterComplex: string[] = []
+
+  // We need to map which filter output goes to which video stream index (0-11)
+  // Logic:
+  // Loop Res 1920 -> Codec AV1(0), HEVC(1), VP9(2), AVC(3)
+  // Loop Res 1080 -> Codec AV1(4), HEVC(5), VP9(6), AVC(7)
+  // ...
+
+  VIDEO_VARIANTS.forEach((variant) => {
+    // Input label for this resolution chain
+    const scaleOutLabel = `vscale_${variant.height}`
+
+    // Safety scaling: Ensure width is divisible by 2 for YUV420p
+    // trunc(oh*a/2)*2 ensures even width based on aspect ratio
+    const scaleFilter = `[0:v]scale=trunc(oh*a/2)*2:${variant.height}:flags=lanczos,fps=${FPS}[${scaleOutLabel}]`
+    filterComplex.push(scaleFilter)
+
+    // Split the scaled output into 4 streams (one for each codec)
+    // Output labels will be like: [v1920_av1], [v1920_hevc], etc.
+    const splitOutputs = CODECS.map((c) => `[v${variant.height}_${c.name}]`).join('')
+    filterComplex.push(`[${scaleOutLabel}]split=${CODECS.length}${splitOutputs}`)
+  })
+
+  ffmpegArgs.push('-filter_complex', filterComplex.join(';'))
+
+  // =========================================================================
+  // 2. CONSTRUCT VIDEO STREAMS (Indices 0 - 11)
+  // =========================================================================
+  let outputStreamIndex = 0
+
+  VIDEO_VARIANTS.forEach((variant) => {
+    CODECS.forEach((codec) => {
+      const currentIdx = outputStreamIndex
+      const inputLabel = `[v${variant.height}_${codec.name}]`
+
+      // Map the specific split output to this stream index
+      ffmpegArgs.push('-map', inputLabel)
+
+      // Common Video Settings
+      ffmpegArgs.push(
+        `-c:v:${currentIdx}`,
+        codec.ffmpegCodec,
+        `-g:v:${currentIdx}`,
+        `${GOP_SIZE}`, // Fixed GOP
+        `-keyint_min:v:${currentIdx}`,
+        `${GOP_SIZE}`, // Minimum Keyframe interval
+        `-sc_threshold:v:${currentIdx}`,
+        '0', // Disable scene cut detection (CRITICAL for DASH)
+        `-flags:v:${currentIdx}`,
+        '+cgop' // Closed GOP
+      )
+
+      // Codec Specific Optimization
+      if (codec.name === 'av1') {
+        ffmpegArgs.push(
+          `-crf:v:${currentIdx}`,
+          '35',
+          `-preset:v:${currentIdx}`,
+          '8',
+          `-svtav1-params:v:${currentIdx}`,
+          `tune=0:enable-overlays=1:scm=0` // Optional SVT-AV1 tuning
+        )
+      } else {
+        // Bitrate control for non-AV1
+        const bufSize = `${parseInt(variant.videoBitrate) * 2}k`
+        ffmpegArgs.push(`-b:v:${currentIdx}`, variant.videoBitrate, `-maxrate:v:${currentIdx}`, variant.videoBitrate, `-bufsize:v:${currentIdx}`, bufSize)
+
+        if (codec.name === 'avc') {
+          ffmpegArgs.push(`-profile:v:${currentIdx}`, 'high', `-preset:v:${currentIdx}`, 'medium')
+        } else if (codec.name === 'hevc') {
+          ffmpegArgs.push(`-tag:v:${currentIdx}`, 'hvc1', `-preset:v:${currentIdx}`, 'medium')
+        } else if (codec.name === 'vp9') {
+          ffmpegArgs.push(`-row-mt:v:${currentIdx}`, '1', `-deadline:v:${currentIdx}`, 'good', `-cpu-used:v:${currentIdx}`, '2')
+        }
       }
-      // x264 CRF sane range ~17..28, map 0..100 -> 28..18
-      const crf = Math.round(28 - t * 10)
-      return { flag: '-crf', value: clamp(crf, 0, 51) }
-    }
-    case 'hevc': {
-      if (mode === 'gpu') {
-        const cq = Math.round(40 - t * 20)
-        return { flag: '-cq', value: clamp(cq, 1, 51), extra: ['-rc', 'vbr'] }
-      }
-      // x265 defaults higher; map 0..100 -> 30..20
-      const crf = Math.round(30 - t * 10)
-      return { flag: '-crf', value: clamp(crf, 0, 51) }
-    }
-    case 'vp9': {
-      // VP9 CRF 0..63, common ~31 with -b:v 0; map 0..100 -> 40..20
-      const crf = Math.round(40 - t * 20)
-      return { flag: '-crf', value: clamp(crf, 0, 63) }
-    }
-    case 'av1': {
-      if (mode === 'gpu') {
-        // NVENC AV1 CQ 0..51
-        const cq = Math.round(40 - t * 20)
-        return { flag: '-cq', value: clamp(cq, 1, 51), extra: ['-rc', 'vbr'] }
-      }
-      // SVT-AV1 CRF 0..63; map 0..100 -> 40..20
-      const crf = Math.round(40 - t * 20)
-      return { flag: '-crf', value: clamp(crf, 0, 63) }
-    }
-  }
-}
 
-function buildArgs(
-  codecOptions: { cpu: CodecDeviceOptions; gpu?: CodecDeviceOptions },
-  inputRes: { width: number; height: number },
-  outputRes: { width: number; height: number },
-  mode: Device,
-  codec: Codec,
-  quality: number
-): string {
-  const { width, height } = outputRes
-  const padFilter = inputRes.width < width || inputRes.height < height ? `,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2` : ``
-  const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2${padFilter}`
-  const options = codecOptions[mode]!
-  const q = mapQualityToValue(codec, mode, quality)
-  const qualityFlag = `${q.flag} ${q.value}`
-  const rateExtras = q.extra ? ` ${q.extra.join(' ')}` : ''
-
-  // Keep your preset/deadline branching
-  const speedFlag = `-${options.preset ? 'preset ' + options.preset : 'deadline ' + options.deadline}`
-
-  // For CPU CRF, keep -b:v 0 for constant quality where it applies; for NVENC CQ use -rc vbr and omit -b:v 0
-  const isGPU = mode === 'gpu'
-  const bv0 = !isGPU ? ' -b:v 0' : ''
-
-  const extra = mode === 'cpu' && options.extra ? ` ${options.extra}` : ''
-  return `-c:v ${options.lib} -vf "${scaleFilter}" ${qualityFlag}${bv0} ${speedFlag}${rateExtras}${extra} -c:a ${options.audio}`
-}
-
-function parseArgs(args: string): string[] {
-  const regex = /[^\s"]+|"([^"]*)"/gi
-  const result: string[] = []
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(args)) !== null) {
-    result.push(match[1] ? match[1] : match[0])
-  }
-  return result
-}
-
-async function countTotalFrames(filePath: string) {
-  try {
-    const ffmpegProcess = await execa('ffmpeg', ['-i', filePath, '-map', '0:v:0', '-f', 'null', '-'], {
-      stderr: 'pipe',
+      outputStreamIndex++
     })
-    const progressLog = ffmpegProcess.stderr.toString()
-    const matches = [...progressLog.matchAll(/frame=\s*(\d+)/g)]
-    if (matches.length === 0) {
-      return 0
-    }
-    const lastFrameCount = parseInt(matches[matches.length - 1][1], 10)
-    return lastFrameCount
-  } catch {
-    throw Error('Unable to countTotalFrames ' + filePath)
-  }
-}
+  })
 
-// Assume getDimension + ensureDir + onUpdate exist in your module scope
+  // =========================================================================
+  // 3. CONSTRUCT AUDIO STREAMS (Indices 12, 13)
+  // =========================================================================
+  // Current outputStreamIndex should be 12 here
 
-export default async function (
-  filePath: string,
-  outputPath: string,
-  expectedDim: { width: number; height: number },
-  codec: Codec,
-  quality: number = 60,
-  device: Device = 'cpu',
-  onUpdate?: (args: { fileName: string; status: string; completion: number; eta: number; fps: number }) => void
-) {
-  const fileName = filePath.split('/').at(-1)!
-  const originalDim = await getDimension(filePath, 'video')
+  AUDIO_VARIANTS.forEach((audioVar) => {
+    const currentIdx = outputStreamIndex
+    ffmpegArgs.push(
+      '-map',
+      '0:a:0', // Always map from original first audio track
+      `-c:a:${currentIdx}`,
+      'aac',
+      `-b:a:${currentIdx}`,
+      audioVar.bitrate,
+      `-ac:a:${currentIdx}`,
+      `${audioVar.channels}`,
+      `-ar:a:${currentIdx}`,
+      '48000'
+    )
+    outputStreamIndex++
+  })
 
-  const cOpt = codecOptions[codec]
-  if (!cOpt) throw new Error(`Codec ${codec} not supported`)
+  // =========================================================================
+  // 4. GENERATE ADAPTATION SETS STRINGS
+  // =========================================================================
+  // We need to group streams by codec.
+  // Structure:
+  // AV1 Group:  Indices where codec is AV1 (0, 4, 8)
+  // HEVC Group: Indices where codec is HEVC (1, 5, 9)
+  // ...
+  // Audio Group: Indices 12, 13
 
-  const presetName = `${codec}-${expectedDim.height}p-${expectedDim.width >= expectedDim.height ? 'landscape' : 'portrait'}`
+  const adaptationSets: string[] = []
 
-  const selectedArgs =
-    device === 'gpu'
-      ? 'gpu' in cOpt && cOpt.gpu
-        ? buildArgs(cOpt, originalDim, expectedDim, 'gpu', codec, quality)
-        : (() => {
-            throw new Error(`GPU not supported for codec ${codec}`)
-          })()
-      : buildArgs(cOpt, originalDim, expectedDim, 'cpu', codec, quality)
-
-  try {
-    console.log(`Conversion started ${fileName} to ${presetName}`)
-    if (onUpdate) onUpdate({ fileName, status: `start-${presetName}`, completion: 0, eta: Infinity, fps: 0 })
-
-    const totalFrames = await countTotalFrames(filePath)
-    const progressData: Record<string, string> = {}
-
-    await ensureDir(outputPath)
-
-    const ffmpegProcess = execa('ffmpeg', ['-y', '-i', filePath, ...parseArgs(selectedArgs), outputPath, '-progress', 'pipe:1'], { stdout: 'pipe', stderr: 'pipe' })
-
-    ffmpegProcess.stdout.on('data', (chunk) => {
-      chunk
-        .toString()
-        .split('\n')
-        .forEach((line: string) => {
-          const [key, value] = line.split('=')
-          if (key && value) progressData[key.trim()] = value.trim()
-        })
+  // Create Video Adaptation Sets (0 to 3)
+  CODECS.forEach((codec, codecIndex) => {
+    // Logic: The codec appears every 4th stream, starting at its own index
+    // e.g. AV1 is at 0, then 0+4, then 0+4+4...
+    const streamIndices: number[] = []
+    VIDEO_VARIANTS.forEach((_, resIndex) => {
+      const streamId = codecIndex + resIndex * CODECS.length
+      streamIndices.push(streamId)
     })
 
-    const progressInterval = setInterval(() => {
-      if (progressData.out_time_ms) {
-        const processedFrames = parseInt(progressData.frame, 10)
-        const fps = parseFloat(progressData.fps)
-        if (Number.isNaN(processedFrames) || Number.isNaN(fps)) return
-        const completion = Number(((processedFrames / totalFrames) * 100).toFixed(2))
-        const eta = Number(((totalFrames - processedFrames) / fps).toFixed(2))
-        if (onUpdate) onUpdate({ fileName, status: `process-${presetName}`, completion, eta, fps })
-      }
-    }, 1000)
+    adaptationSets.push(`id=${codecIndex},streams=${streamIndices.join(',')}`)
+  })
 
-    await ffmpegProcess
-    clearInterval(progressInterval)
+  // Create Audio Adaptation Set (4)
+  const audioIndices = AUDIO_VARIANTS.map((_, i) => 12 + i).join(',')
+  adaptationSets.push(`id=${CODECS.length},streams=${audioIndices}`)
 
-    console.log(`Conversion complete ${fileName} to ${presetName}`)
-    if (onUpdate) onUpdate({ fileName, status: `complete-${presetName}`, completion: 100, eta: 0, fps: 0 })
+  // =========================================================================
+  // 5. DASH OUTPUT CONFIGURATION
+  // =========================================================================
+  const mpdFileName = `${outputName}.mpd`
 
-    return { status: 'fulfilled', value: presetName }
-  } catch (error) {
-    console.error('transcode-video ', error)
+  ffmpegArgs.push(
+    '-f',
+    'dash',
+    '-seg_duration',
+    `${SEGMENT_DURATION}`,
+    '-use_timeline',
+    '1',
+    '-use_template',
+    '1',
+    '-adaptation_sets',
+    adaptationSets.join(' '),
+    '-init_seg_name',
+    `${outputName}_$RepresentationID$_init.mp4`,
+    '-media_seg_name',
+    `${outputName}_$RepresentationID$_seg_$Number$.m4s`,
+    mpdFileName
+  )
+
+  try {
+    await execa('ffmpeg', ffmpegArgs, { cwd: outputDir })
+
     return {
-      status: 'rejected',
-      value: presetName,
-      reason: error instanceof Error ? error.message : String(error),
+      success: true,
+      mpdFile: path.join(outputDir, mpdFileName),
+      outputDir: outputDir,
     }
+  } catch (error: unknown) {
+    console.error('❌ FFmpeg failed:', error)
+    // Re-throw to allow caller to handle
+    throw error
   }
 }
